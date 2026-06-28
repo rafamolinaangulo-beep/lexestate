@@ -1,0 +1,14 @@
+Options -MultiViews
+RewriteEngine On
+
+# Pass API requests to api.php
+RewriteCond %{REQUEST_URI} ^/api\.php
+RewriteRule ^ - [L]
+
+# Pass existing files/directories through
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# SPA fallback: serve index.html for all other paths
+RewriteRule ^ index.html [L]
