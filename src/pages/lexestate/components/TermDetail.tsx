@@ -3,6 +3,7 @@ import { ArrowLeft, Star, Volume2, BookOpen, Tag, AlertCircle, Lightbulb } from 
 import type { LexTerm, LexCategory, LexUser, LexView } from '../types'
 import { toggleFavorite } from '../api'
 import { toggleLocalFavorite, isLocalFavorite } from '../localStorage'
+import { speak } from '../tts'
 
 interface Props {
   termId: string
@@ -20,15 +21,6 @@ const LEVEL_COLORS: Record<string, string> = {
   B2: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   C1: 'bg-red-500/20 text-red-400 border-red-500/30',
   C2: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-}
-
-function speak(text: string) {
-  if (!window.speechSynthesis) return
-  window.speechSynthesis.cancel()
-  const utt = new SpeechSynthesisUtterance(text)
-  utt.lang = 'en-GB'
-  utt.rate = 0.85
-  window.speechSynthesis.speak(utt)
 }
 
 export default function TermDetail({ termId, user, terms, categories, onBack, onNavigate }: Props) {
@@ -94,7 +86,7 @@ export default function TermDetail({ termId, user, terms, categories, onBack, on
       <div className="bg-[#0f2040] border border-slate-700/30 rounded-2xl p-6">
         {/* Word + level */}
         <div className="flex items-start justify-between gap-4 mb-1">
-          <h1 className="text-3xl font-bold text-white">{term.word_en}</h1>
+          <h1 className="text-3xl font-bold text-white capitalize">{term.word_en}</h1>
           <span className={`text-xs font-bold px-2 py-1 rounded border flex-shrink-0 ${LEVEL_COLORS[term.level] ?? ''}`}>
             {term.level}
           </span>
@@ -220,7 +212,7 @@ export default function TermDetail({ termId, user, terms, categories, onBack, on
                 className="flex items-center gap-2 text-sm text-slate-400 hover:text-emerald-400
                            transition-colors group">
                 <span className="text-xs text-slate-600">→</span>
-                <span className="group-hover:underline">{t.word_en}</span>
+                <span className="group-hover:underline capitalize">{t.word_en}</span>
                 <span className="text-slate-600 text-xs">— {t.translation_es}</span>
               </button>
             ))}

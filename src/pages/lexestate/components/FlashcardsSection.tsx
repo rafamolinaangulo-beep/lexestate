@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { RotateCcw, X, Minus, BookOpen, CheckCheck } from 'lucide-react'
+import { RotateCcw, BookOpen, Volume2 } from 'lucide-react'
 import type { LexTerm, LexCategory, LexUser, FlashcardRating } from '../types'
 import { updateProgress, setTermStatus } from '../api'
-import { updateLocalProgress, setLocalTermStatus } from '../localStorage'
+import { updateLocalProgress, setLocalTermStatus, recordStudyActivity, getLocalSettings } from '../localStorage'
+import { speak } from '../tts'
 
 interface Props {
   user: LexUser | null
@@ -33,6 +34,13 @@ export default function FlashcardsSection({ user, terms, categories, dataLoaded 
   const [current, setCurrent] = useState(0)
   const [revealed, setRevealed] = useState(false)
   const [results, setResults] = useState<FlashcardRating[]>([])
+
+  // Auto-pronounce word when new card appears
+  useEffect(() => {
+    if (phase !== 'session' || deck.length === 0) return
+    const settings = getLocalSettings()
+    if (settings.auto_pronunciation) speak(deck[current].word_en)
+  }, [current, phase, deck])
 
   function buildDeck() {
     let pool = [...terms]
@@ -68,6 +76,7 @@ export default function FlashcardsSection({ user, terms, categories, dataLoaded 
     }
 
     if (current + 1 >= deck.length) {
+      recordStudyActivity()
       setPhase('done')
     } else {
       setCurrent(c => c + 1)
@@ -174,7 +183,15 @@ export default function FlashcardsSection({ user, terms, categories, dataLoaded 
           {cat && (
             <span className="text-xs text-slate-500 mb-3 block">{cat.icon} {cat.name}</span>
           )}
-          <h2 className="text-3xl font-bold text-white mb-2">{term.word_en}</h2>
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-3xl font-bold text-white">{term.word_en}</h2>
+            <button
+              onClick={() => speak(term.word_en)}
+              className="p-1.5 rounded-lg bg-slate-700/30 hover:bg-emerald-500/10
+                         text-slate-500 hover:text-emerald-400 transition-colors flex-shrink-0">
+              <Volume2 size={16} />
+            </button>
+          </div>
           {term.pronunciation && (
             <p className="text-slate-500 text-sm">{term.pronunciation}</p>
           )}

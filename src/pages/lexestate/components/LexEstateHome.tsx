@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Layers, PenLine, GraduationCap, TrendingUp, Heart, RotateCcw, Zap } from 'lucide-react'
-import type { LexUser, LexView, LexTerm, LexCategory, LexStats } from '../types'
-import { fetchStats } from '../api'
-import { computeLocalStats } from '../localStorage'
+import { BookOpen, Layers, PenLine, GraduationCap, TrendingUp, Heart, RotateCcw, Zap, BookType } from 'lucide-react'
+import type { LexUser, LexView, LexTerm, LexCategory, LexStats, LexVerbStats } from '../types'
+import { fetchStats, fetchVerbStats } from '../api'
+import { computeLocalStats, computeLocalVerbStats } from '../localStorage'
 
 interface Props {
   user: LexUser | null
@@ -16,6 +16,7 @@ interface Props {
 
 const CARDS = [
   { view: 'vocabulary' as LexView, label: 'Vocabulario',  desc: 'Explora todos los términos', icon: BookOpen,      color: 'from-emerald-500 to-teal-600' },
+  { view: 'verbs'      as LexView, label: 'Verbos',       desc: 'Irregulares y regulares',    icon: BookType,      color: 'from-cyan-500 to-blue-600' },
   { view: 'flashcards' as LexView, label: 'Flashcards',   desc: 'Estudio con tarjetas',       icon: Layers,        color: 'from-blue-500 to-indigo-600' },
   { view: 'write'      as LexView, label: 'Escribir',     desc: 'Escribe la respuesta',       icon: PenLine,       color: 'from-violet-500 to-purple-600' },
   { view: 'quiz'       as LexView, label: 'Test',         desc: 'Examen de opciones',         icon: GraduationCap, color: 'from-amber-500 to-orange-600' },
@@ -34,6 +35,7 @@ function StatBadge({ label, value, color }: { label: string; value: number; colo
 
 export default function LexEstateHome({ user, terms, dataLoaded, onNavigate }: Props) {
   const [stats, setStats] = useState<LexStats | null>(null)
+  const [verbStats, setVerbStats] = useState<LexVerbStats | null>(null)
 
   useEffect(() => {
     if (!dataLoaded) return
@@ -41,8 +43,12 @@ export default function LexEstateHome({ user, terms, dataLoaded, onNavigate }: P
       fetchStats().then(setStats).catch(() => {
         setStats(computeLocalStats(terms.length))
       })
+      fetchVerbStats().then(setVerbStats).catch(() => {
+        setVerbStats(computeLocalVerbStats(0) as LexVerbStats)
+      })
     } else {
       setStats(computeLocalStats(terms.length))
+      setVerbStats(computeLocalVerbStats(0) as LexVerbStats)
     }
   }, [user, dataLoaded, terms.length])
 
@@ -78,6 +84,32 @@ export default function LexEstateHome({ user, terms, dataLoaded, onNavigate }: P
           <StatBadge label="Difíciles" value={stats.difficult} color="text-amber-400" />
           <StatBadge label="Dominadas" value={stats.mastered} color="text-emerald-400" />
         </div>
+      )}
+
+      {/* Verb stats */}
+      {verbStats && verbStats.total > 0 && (
+        <button onClick={() => onNavigate('verbs')}
+          className="w-full bg-[#0f2040] border border-cyan-500/20 hover:border-cyan-500/40
+                     rounded-2xl p-4 text-left transition-all hover:bg-[#132952] group">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <BookType size={15} className="text-cyan-400" />
+              <span className="text-white text-sm font-medium">Verbos</span>
+            </div>
+            <span className="text-cyan-400 text-xs font-bold group-hover:text-cyan-300">
+              {verbStats.mastered}/{verbStats.total} dominados
+            </span>
+          </div>
+          <div className="h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-cyan-600 to-blue-400 rounded-full transition-all"
+                 style={{ width: `${verbStats.total > 0 ? Math.round((verbStats.mastered / verbStats.total) * 100) : 0}%` }} />
+          </div>
+          <div className="flex gap-3 mt-2 text-xs text-slate-500">
+            <span className="text-blue-400">{verbStats.learning} aprendiendo</span>
+            <span className="text-amber-400">{verbStats.difficult} difíciles</span>
+            {verbStats.accuracy > 0 && <span>{verbStats.accuracy}% precisión</span>}
+          </div>
+        </button>
       )}
 
       {/* Progress bar */}

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { TrendingUp, Target, Zap, Calendar, BarChart2, CheckCheck, ChevronDown, ChevronUp } from 'lucide-react'
-import type { LexTerm, LexCategory, LexUser, LexStats, LexView, LexQuizResult, LexUserProgress } from '../types'
-import { fetchStats, fetchQuizResults, fetchUserProgress } from '../api'
-import { computeLocalStats, getLocalQuizResults, getLocalProgress } from '../localStorage'
+import { TrendingUp, Target, Zap, Calendar, BarChart2, CheckCheck, ChevronDown, ChevronUp, BookType, Headphones, FileText, GraduationCap, PenLine, MessageSquare, Mail } from 'lucide-react'
+import type { LexTerm, LexCategory, LexUser, LexStats, LexView, LexQuizResult, LexUserProgress, LexVerbStats } from '../types'
+import { fetchStats, fetchQuizResults, fetchUserProgress, fetchVerbStats } from '../api'
+import { computeLocalStats, getLocalQuizResults, getLocalProgress, computeLocalVerbStats, getActivityLog, getLocalStreak, getPracticeStats } from '../localStorage'
 
 interface Props {
   user: LexUser | null
@@ -31,6 +31,7 @@ const LEVEL_BADGE: Record<string, string> = {
 
 export default function ProgressSection({ user, terms, categories, dataLoaded, onNavigate }: Props) {
   const [stats, setStats] = useState<LexStats | null>(null)
+  const [verbStats, setVerbStats] = useState<LexVerbStats | null>(null)
   const [results, setResults] = useState<LexQuizResult[]>([])
   const [masteredTerms, setMasteredTerms] = useState<LexTerm[]>([])
   const [showMastered, setShowMastered] = useState(false)
@@ -44,6 +45,10 @@ export default function ProgressSection({ user, terms, categories, dataLoaded, o
       ? fetchStats().catch(() => computeLocalStats(terms.length))
       : Promise.resolve(computeLocalStats(terms.length))
 
+    const verbStatsP = user
+      ? fetchVerbStats().catch(() => computeLocalVerbStats(0) as LexVerbStats)
+      : Promise.resolve(computeLocalVerbStats(0) as LexVerbStats)
+
     const resultsP = user
       ? fetchQuizResults().catch(() => getLocalQuizResults())
       : Promise.resolve(getLocalQuizResults())
@@ -55,25 +60,33 @@ export default function ProgressSection({ user, terms, categories, dataLoaded, o
             .map(([term_id, p]) => ({ term_id, ...p } as LexUserProgress))
         )
 
-    Promise.all([statsP, resultsP, progressP]).then(([s, r, progress]) => {
+    Promise.all([statsP, verbStatsP, resultsP, progressP]).then(([s, vs, r, progress]) => {
       setStats(s)
+      setVerbStats(vs)
       setResults(r.slice(0, 10))
       const masteredIds = new Set(progress.filter(p => p.status === 'mastered').map(p => p.term_id))
       setMasteredTerms(terms.filter(t => masteredIds.has(t.id)))
     }).finally(() => setLoading(false))
   }, [user, dataLoaded, terms])
 
+  const masteredSet = new Set(masteredTerms.map(t => t.id))
+
   // Progress by level
   const levelStats = ['A1','A2','B1','B2','C1','C2'].map(level => {
     const levelTerms = terms.filter(t => t.level === level)
-    return { level, total: levelTerms.length }
+    const mastered = levelTerms.filter(t => masteredSet.has(t.id)).length
+    return { level, total: levelTerms.length, mastered }
   })
 
   // Progress by category
   const catStats = categories.map(cat => {
     const catTerms = terms.filter(t => t.category_id === cat.id)
-    return { cat, total: catTerms.length }
+    const mastered = catTerms.filter(t => masteredSet.has(t.id)).length
+    return { cat, total: catTerms.length, mastered }
   }).filter(c => c.total > 0).slice(0, 8)
+
+  const activityLog = getActivityLog()
+  const localStreak = getLocalStreak()
 
   if (loading) {
     return <div className="flex justify-center py-16"><div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full" /></div>
@@ -86,12 +99,15 @@ export default function ProgressSection({ user, terms, categories, dataLoaded, o
         Progreso
       </h1>
 
+      {/* Streak + heatmap */}
+      <ActivityHeatmap log={activityLog} streak={stats?.streak ?? localStreak} />
+
       {/* Main stats */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: 'Total',       value: stats.total,    color: 'text-white' },
-            { label: 'Pendientes',  value: stats.pending,  color: 'text-slate-400' },
+            { label: 'Dominadas',   value: stats.mastered, color: 'text-emerald-400' },
             { label: 'Aprendiendo', value: stats.learning, color: 'text-blue-400' },
             { label: 'Difíciles',   value: stats.difficult,color: 'text-amber-400' },
           ].map(s => (
@@ -100,6 +116,37 @@ export default function ProgressSection({ user, terms, categories, dataLoaded, o
               <div className="text-slate-500 text-xs mt-0.5">{s.label}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Verb stats */}
+      {verbStats && verbStats.total > 0 && (
+        <div className="bg-[#0f2040] border border-cyan-500/20 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <BookType size={15} className="text-cyan-400" />
+            <h2 className="text-white font-medium text-sm">Progreso de verbos</h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            {[
+              { label: 'Total',       value: verbStats.total,    color: 'text-white' },
+              { label: 'Dominados',   value: verbStats.mastered, color: 'text-emerald-400' },
+              { label: 'Aprendiendo', value: verbStats.learning, color: 'text-blue-400' },
+              { label: 'Difíciles',   value: verbStats.difficult,color: 'text-amber-400' },
+            ].map(s => (
+              <div key={s.label} className="bg-[#0a1628] border border-slate-700/20 rounded-xl p-3 text-center">
+                <div className={`text-xl font-bold ${s.color}`}>{s.value}</div>
+                <div className="text-slate-600 text-[11px] mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
+          <div className="h-2 bg-slate-700/50 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-cyan-600 to-blue-400 rounded-full transition-all"
+                 style={{ width: `${verbStats.total > 0 ? Math.round((verbStats.mastered / verbStats.total) * 100) : 0}%` }} />
+          </div>
+          <div className="flex justify-between text-xs text-slate-500 mt-1.5">
+            <span>Precisión: {verbStats.accuracy}%</span>
+            <span>{verbStats.total > 0 ? Math.round((verbStats.mastered / verbStats.total) * 100) : 0}% completado</span>
+          </div>
         </div>
       )}
 
@@ -130,19 +177,19 @@ export default function ProgressSection({ user, terms, categories, dataLoaded, o
       <div className="bg-[#0f2040] border border-slate-700/30 rounded-2xl p-5">
         <h2 className="text-white font-medium text-sm mb-4 flex items-center gap-2">
           <BarChart2 size={15} className="text-slate-400" />
-          Términos por nivel
+          Progreso por nivel
         </h2>
         <div className="space-y-2.5">
-          {levelStats.map(ls => (
+          {levelStats.filter(ls => ls.total > 0).map(ls => (
             <div key={ls.level} className="flex items-center gap-3">
               <div className={`text-xs font-bold px-2 py-0.5 rounded ${LEVEL_COLORS[ls.level]} text-white w-10 text-center`}>
                 {ls.level}
               </div>
               <div className="flex-1 h-2 bg-slate-700/50 rounded-full overflow-hidden">
-                <div className={`h-full ${LEVEL_COLORS[ls.level]} rounded-full`}
-                     style={{ width: `${terms.length > 0 ? (ls.total / terms.length) * 100 : 0}%` }} />
+                <div className={`h-full ${LEVEL_COLORS[ls.level]} rounded-full transition-all`}
+                     style={{ width: `${ls.total > 0 ? (ls.mastered / ls.total) * 100 : 0}%` }} />
               </div>
-              <span className="text-slate-400 text-xs w-8 text-right">{ls.total}</span>
+              <span className="text-slate-400 text-xs w-14 text-right">{ls.mastered}/{ls.total}</span>
             </div>
           ))}
         </div>
@@ -150,20 +197,23 @@ export default function ProgressSection({ user, terms, categories, dataLoaded, o
 
       {/* By category */}
       <div className="bg-[#0f2040] border border-slate-700/30 rounded-2xl p-5">
-        <h2 className="text-white font-medium text-sm mb-4">Términos por categoría</h2>
+        <h2 className="text-white font-medium text-sm mb-4">Progreso por categoría</h2>
         <div className="space-y-2">
           {catStats.map(cs => (
             <div key={cs.cat.id} className="flex items-center gap-3">
               <span className="text-xs text-slate-400 w-32 truncate">{cs.cat.icon} {cs.cat.name}</span>
               <div className="flex-1 h-2 bg-slate-700/50 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500/60 rounded-full"
-                     style={{ width: `${terms.length > 0 ? (cs.total / terms.length) * 100 : 0}%` }} />
+                <div className="h-full bg-emerald-500/60 rounded-full transition-all"
+                     style={{ width: `${cs.total > 0 ? (cs.mastered / cs.total) * 100 : 0}%` }} />
               </div>
-              <span className="text-slate-400 text-xs w-6 text-right">{cs.total}</span>
+              <span className="text-slate-400 text-xs w-10 text-right">{cs.mastered}/{cs.total}</span>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Practice modes overview */}
+      <PracticeModesCard quizResults={results} onNavigate={onNavigate} />
 
       {/* Recent quiz results */}
       {results.length > 0 && (
@@ -248,6 +298,229 @@ export default function ProgressSection({ user, terms, categories, dataLoaded, o
           Repasar los {stats.difficult} términos difíciles
         </button>
       )}
+    </div>
+  )
+}
+
+function relativeDate(iso: string | null): string {
+  if (!iso) return '—'
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  if (diff === 0) return 'Hoy'
+  if (diff === 1) return 'Ayer'
+  if (diff < 7) return `Hace ${diff} días`
+  return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+}
+
+function AccuracyBar({ pct }: { pct: number }) {
+  return (
+    <div className="flex items-center gap-2 flex-1 min-w-0">
+      <div className="flex-1 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full ${pct >= 70 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={`text-xs font-semibold w-9 text-right ${pct >= 70 ? 'text-emerald-400' : pct >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+        {pct}%
+      </span>
+    </div>
+  )
+}
+
+function PracticeModesCard({ quizResults, onNavigate }: { quizResults: LexQuizResult[]; onNavigate: (v: LexView) => void }) {
+  const listening = getPracticeStats('listening')
+  const fillBlank = getPracticeStats('fill_blank')
+
+  // Quiz stats from existing quiz results
+  const quizSessions = quizResults.length
+  const quizAccuracy = quizSessions > 0
+    ? Math.round(quizResults.reduce((s, r) => s + r.percentage, 0) / quizSessions)
+    : 0
+  const quizLastDate = quizResults[0]?.created_at ?? null
+
+  const MODES = [
+    {
+      icon: GraduationCap, label: 'Test', view: 'quiz' as LexView,
+      sessions: quizSessions, accuracy: quizAccuracy,
+      words: quizResults.reduce((s, r) => s + r.total_questions, 0),
+      lastDate: quizLastDate,
+      color: 'text-amber-400',
+    },
+    {
+      icon: Headphones, label: 'Dictado', view: 'listening' as LexView,
+      sessions: listening.sessions, accuracy: listening.accuracy,
+      words: listening.totalWords, lastDate: listening.lastDate,
+      color: 'text-emerald-400',
+    },
+    {
+      icon: FileText, label: 'Rellena huecos', view: 'fill-blank' as LexView,
+      sessions: fillBlank.sessions, accuracy: fillBlank.accuracy,
+      words: fillBlank.totalWords, lastDate: fillBlank.lastDate,
+      color: 'text-blue-400',
+    },
+    {
+      icon: PenLine, label: 'Escribir', view: 'write' as LexView,
+      sessions: null, accuracy: null, words: null, lastDate: null,
+      color: 'text-violet-400',
+    },
+  ]
+
+  const RESOURCES = [
+    { icon: MessageSquare, label: 'Expresiones profesionales', count: 30, view: 'phrases' as LexView, desc: '30 frases B1–C1' },
+    { icon: Mail, label: 'Emails profesionales', count: 5, view: 'emails' as LexView, desc: '5 plantillas B1–C1' },
+  ]
+
+  return (
+    <div className="bg-[#0f2040] border border-slate-700/30 rounded-2xl p-5 space-y-4">
+      <h2 className="text-white font-medium text-sm flex items-center gap-2">
+        <BarChart2 size={15} className="text-slate-400" />
+        Práctica por módulos
+      </h2>
+
+      {/* Practice modes table */}
+      <div className="space-y-2.5">
+        {MODES.map(m => {
+          const Icon = m.icon
+          const hasData = m.sessions !== null && m.sessions > 0
+          return (
+            <button key={m.label} onClick={() => onNavigate(m.view)}
+              className="w-full flex items-center gap-3 group hover:bg-slate-700/10 rounded-xl px-2 py-1.5 transition-colors -mx-2">
+              <Icon size={15} className={`flex-shrink-0 ${m.color}`} />
+              <span className="text-slate-300 text-sm w-28 text-left truncate group-hover:text-white transition-colors">
+                {m.label}
+              </span>
+              {hasData ? (
+                <>
+                  <AccuracyBar pct={m.accuracy!} />
+                  <div className="flex flex-col items-end flex-shrink-0 w-24">
+                    <span className="text-slate-400 text-xs">{m.sessions} {m.sessions === 1 ? 'sesión' : 'sesiones'}</span>
+                    <span className="text-slate-600 text-[10px]">{relativeDate(m.lastDate)}</span>
+                  </div>
+                </>
+              ) : m.sessions === 0 ? (
+                <span className="text-slate-600 text-xs ml-auto">Sin sesiones aún</span>
+              ) : (
+                <span className="text-slate-600 text-xs ml-auto">Sin seguimiento</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Browse resources */}
+      <div className="border-t border-slate-700/30 pt-3">
+        <div className="text-slate-600 text-[10px] uppercase tracking-wider mb-2">Recursos de estudio</div>
+        <div className="grid grid-cols-2 gap-2">
+          {RESOURCES.map(r => {
+            const Icon = r.icon
+            return (
+              <button key={r.label} onClick={() => onNavigate(r.view)}
+                className="flex items-center gap-2 bg-slate-700/20 hover:bg-slate-700/35 rounded-xl
+                           px-3 py-2.5 text-left transition-colors group">
+                <Icon size={14} className="text-emerald-400/70 flex-shrink-0" />
+                <div>
+                  <div className="text-slate-300 text-xs group-hover:text-white transition-colors truncate">
+                    {r.label}
+                  </div>
+                  <div className="text-slate-600 text-[10px]">{r.desc}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ActivityHeatmap({ log, streak }: { log: Record<string, number>; streak: number }) {
+  const WEEKS = 16
+  const today = new Date()
+  const days: { date: string; count: number }[] = []
+  for (let i = WEEKS * 7 - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const key = d.toISOString().split('T')[0]
+    days.push({ date: key, count: log[key] ?? 0 })
+  }
+
+  // Pad start so first week begins on Monday
+  const firstDay = new Date(days[0].date)
+  const startOffset = (firstDay.getDay() + 6) % 7 // Mon=0
+  const padded = [...Array(startOffset).fill(null), ...days]
+  const weeks: (typeof days[0] | null)[][] = []
+  for (let i = 0; i < padded.length; i += 7) weeks.push(padded.slice(i, i + 7))
+
+  const MONTH_LABELS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+  const DAY_LABELS = ['L','M','X','J','V','S','D']
+
+  function cellColor(count: number) {
+    if (count === 0) return 'bg-slate-700/40'
+    if (count === 1) return 'bg-emerald-800/80'
+    if (count < 4) return 'bg-emerald-600/80'
+    return 'bg-emerald-400'
+  }
+
+  return (
+    <div className="bg-[#0f2040] border border-slate-700/30 rounded-2xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Calendar size={15} className="text-slate-400" />
+          <h2 className="text-white font-medium text-sm">Actividad de estudio</h2>
+        </div>
+        {streak > 0 && (
+          <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1">
+            <Zap size={12} className="text-amber-400" />
+            <span className="text-amber-400 text-xs font-semibold">{streak} {streak === 1 ? 'día' : 'días'} seguidos</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-1 overflow-x-auto pb-1">
+        {/* Day labels */}
+        <div className="flex flex-col gap-1 mr-1">
+          {DAY_LABELS.map(d => (
+            <div key={d} className="w-3 h-3 flex items-center justify-center text-[9px] text-slate-600 leading-none">
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* Weeks grid */}
+        {weeks.map((week, wi) => {
+          // Month label: show if first day of month appears in this week
+          const monthLabel = week.find(d => d && d.date.endsWith('-01'))
+          const month = monthLabel
+            ? MONTH_LABELS[parseInt(monthLabel.date.split('-')[1]) - 1]
+            : null
+
+          return (
+            <div key={wi} className="relative">
+              {month && (
+                <div className="absolute -top-4 left-0 text-[9px] text-slate-600 whitespace-nowrap">
+                  {month}
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                {week.map((day, di) => (
+                  <div key={di}
+                    title={day ? `${day.date}: ${day.count} ${day.count === 1 ? 'sesión' : 'sesiones'}` : ''}
+                    className={`w-3 h-3 rounded-sm transition-colors ${day ? cellColor(day.count) : 'bg-transparent'}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="flex items-center gap-2 mt-3">
+        <span className="text-slate-600 text-[10px]">Menos</span>
+        {['bg-slate-700/40','bg-emerald-800/80','bg-emerald-600/80','bg-emerald-400'].map(c => (
+          <div key={c} className={`w-3 h-3 rounded-sm ${c}`} />
+        ))}
+        <span className="text-slate-600 text-[10px]">Más</span>
+      </div>
     </div>
   )
 }

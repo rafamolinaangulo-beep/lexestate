@@ -1,19 +1,35 @@
 import { useState } from 'react'
-import { GraduationCap, CheckCircle, XCircle, Clock, ArrowRight, RotateCcw, BookMarked } from 'lucide-react'
-import type { LexTerm, LexCategory, LexUser, QuizConfig, GeneratedQuestion, QuizMistake } from '../types'
-import { generateLocalQuestions, saveQuizResult, updateProgress } from '../api'
-import { saveLocalQuizResult, updateLocalProgress } from '../localStorage'
+import { GraduationCap, CheckCircle, XCircle, Clock, ArrowRight, RotateCcw, BookMarked, BookType } from 'lucide-react'
+import type { LexTerm, LexCategory, LexUser, QuizConfig, GeneratedQuestion, QuizMistake, LexVerb } from '../types'
+import { generateLocalQuestions, saveQuizResult, updateProgress, updateVerbProgress } from '../api'
+import { saveLocalQuizResult, updateLocalProgress, updateLocalVerbProgress, recordStudyActivity } from '../localStorage'
 
 interface Props {
   user: LexUser | null
   terms: LexTerm[]
   categories: LexCategory[]
+  verbs?: LexVerb[]
   dataLoaded: boolean
   onRefreshData: () => void
   onReview: (termIds: string[]) => void
 }
 
 type Phase = 'config' | 'session' | 'done'
+
+type VocabQuestion = GeneratedQuestion & { kind: 'vocab' }
+type VerbQuestion = {
+  kind: 'verb'
+  verbId: string
+  baseForm: string
+  translationEs: string
+  tense: 'past_simple' | 'past_participle'
+  question_type: string
+  question_text: string
+  correct_answer: string
+  options: string[]
+  explanation: string
+}
+type MixedQuestion = VocabQuestion | VerbQuestion
 
 const QUESTION_TYPES = [
   { value: 'mixed',                label: 'Mixto (todos los tipos)' },
@@ -30,7 +46,7 @@ function formatTime(s: number): string {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-export default function QuizSection({ user, terms, categories, dataLoaded, onReview }: Props) {
+export default function QuizSection({ user, terms, categories, verbs = [], dataLoaded, onReview }: Props) {
   const [phase, setPhase] = useState<Phase>('config')
   const [config, setConfig] = useState<QuizConfig>({
     count: 10,
@@ -38,7 +54,8 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
     level: null,
     question_type: 'mixed',
   })
-  const [questions, setQuestions] = useState<GeneratedQuestion[]>([])
+  const [includeVerbs, setIncludeVerbs] = useState(false)
+  const [questions, setQuestions] = useState<MixedQuestion[]>([])
   const [current, setCurrent] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
@@ -52,14 +69,50 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
     if (timerRef) { clearInterval(timerRef); setTimerRef(null) }
   }
 
+  function buildVerbQuestions(count: number): VerbQuestion[] {
+    if (!verbs.length) return []
+    const tenses: ('past_simple' | 'past_participle')[] = ['past_simple', 'past_participle']
+    const items: VerbQuestion[] = []
+    for (const v of verbs) {
+      for (const tense of tenses) {
+        const correctAnswer = tense === 'past_simple'
+          ? v.past_simple.split('/')[0].trim()
+          : v.past_participle.split('/')[0].trim()
+        const wrong = verbs
+          .filter(w => w.id !== v.id)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 6)
+          .map(w => tense === 'past_simple' ? w.past_simple.split('/')[0].trim() : w.past_participle.split('/')[0].trim())
+          .filter(w => w !== correctAnswer)
+          .slice(0, 3)
+        items.push({
+          kind: 'verb', verbId: v.id, baseForm: v.base_form,
+          translationEs: v.translation_es, tense,
+          question_type: 'verb_form',
+          question_text: `¿${tense === 'past_simple' ? 'Past Simple' : 'Past Participle'} de "${v.base_form}" (${v.translation_es})?`,
+          correct_answer: correctAnswer,
+          options: [correctAnswer, ...wrong].sort(() => Math.random() - 0.5),
+          explanation: `${v.base_form} → ${v.past_simple} → ${v.past_participle}`,
+        })
+      }
+    }
+    return items.sort(() => Math.random() - 0.5).slice(0, count)
+  }
+
   function buildQuiz() {
     let pool = [...terms]
     if (config.category_id) pool = pool.filter(t => t.category_id === config.category_id)
     if (config.level) pool = pool.filter(t => t.level === config.level)
     if (pool.length < 4) { alert('No hay suficientes términos con ese filtro (mínimo 4)'); return }
 
-    const qs = generateLocalQuestions(pool, config.count, config.question_type)
-    setQuestions(qs)
+    const vocabCount = includeVerbs ? Math.ceil(config.count * 0.7) : config.count
+    const verbCount  = includeVerbs ? config.count - vocabCount : 0
+    const vocabQs = generateLocalQuestions(pool, vocabCount, config.question_type)
+      .map(q => ({ ...q, kind: 'vocab' as const }))
+    const verbQs = buildVerbQuestions(verbCount)
+    const mixed: MixedQuestion[] = [...vocabQs, ...verbQs].sort(() => Math.random() - 0.5)
+
+    setQuestions(mixed)
     setCurrent(0)
     setSelected(null)
     setSubmitted(false)
@@ -81,7 +134,7 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
     const correct = option === q.correct_answer
     if (correct) {
       setScore(s => s + 1)
-    } else {
+    } else if (q.kind === 'vocab') {
       setMistakes(prev => [...prev, {
         term_id: q.term.id,
         word_en: q.term.word_en,
@@ -89,11 +142,14 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
         correct_answer: q.correct_answer,
       }])
     }
-    // Actualizar progreso individual del término
-    if (user) {
-      updateProgress(q.term.id, correct, 'quiz', q.question_type).catch(() => {})
+    if (q.kind === 'vocab') {
+      user
+        ? updateProgress(q.term.id, correct, 'quiz', q.question_type).catch(() => {})
+        : updateLocalProgress(q.term.id, correct)
     } else {
-      updateLocalProgress(q.term.id, correct)
+      user
+        ? updateVerbProgress(q.verbId, correct, 'quiz').catch(() => {})
+        : updateLocalVerbProgress(q.verbId, correct)
     }
   }
 
@@ -102,7 +158,6 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
       stopTimer()
       const finalElapsed = Math.floor((Date.now() - startTime) / 1000)
       setElapsed(finalElapsed)
-      const finalScore = score + (selected === questions[current].correct_answer ? 0 : 0)
       const pct = Math.round((score / questions.length) * 100)
       const result = {
         score,
@@ -110,7 +165,7 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
         percentage: pct,
         category_id: config.category_id,
         level: config.level,
-        question_type: config.question_type,
+        question_type: includeVerbs ? 'mixed+verbs' : config.question_type,
         time_seconds: finalElapsed,
         mistakes,
       }
@@ -119,6 +174,7 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
       } else {
         saveLocalQuizResult(result)
       }
+      recordStudyActivity()
       setPhase('done')
     } else {
       setCurrent(c => c + 1)
@@ -183,6 +239,23 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
               {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
+          {verbs.length > 0 && (
+            <button onClick={() => setIncludeVerbs(v => !v)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-all
+                ${includeVerbs
+                  ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                  : 'border-slate-700/50 text-slate-400 hover:border-slate-600'}`}>
+              <BookType size={15} className={includeVerbs ? 'text-cyan-400' : 'text-slate-500'} />
+              <div className="flex-1 text-left">
+                <div className="font-medium">Incluir verbos</div>
+                <div className="text-xs opacity-70">~30% de las preguntas serán formas verbales</div>
+              </div>
+              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+                ${includeVerbs ? 'bg-cyan-500 border-cyan-500' : 'border-slate-600'}`}>
+                {includeVerbs && <CheckCircle size={12} className="text-white" />}
+              </div>
+            </button>
+          )}
           <button onClick={buildQuiz}
             className="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-semibold
                        py-3 rounded-xl transition-colors">
@@ -301,8 +374,15 @@ export default function QuizSection({ user, terms, categories, dataLoaded, onRev
 
       <div className="bg-[#0f2040] border border-slate-700/30 rounded-2xl p-6 space-y-5">
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-2">
-            {QUESTION_TYPES.find(t => t.value === q.question_type)?.label ?? q.question_type}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[10px] uppercase tracking-widest text-slate-500">
+              {q.kind === 'verb'
+                ? (q.tense === 'past_simple' ? 'Verbo · Past Simple' : 'Verbo · Past Participle')
+                : (QUESTION_TYPES.find(t => t.value === q.question_type)?.label ?? q.question_type)}
+            </span>
+            {q.kind === 'verb' && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400">VERB</span>
+            )}
           </div>
           <p className="text-white text-base leading-relaxed">{q.question_text}</p>
         </div>

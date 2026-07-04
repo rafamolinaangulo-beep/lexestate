@@ -119,6 +119,151 @@ export interface LexSettings {
   weekly_goal: number
 }
 
+export interface LexGrammarExample {
+  en: string
+  es: string
+}
+
+export interface LexGrammarTopic {
+  id: string
+  title: string
+  title_es: string
+  level: 'B1' | 'B2' | 'C1' | 'C2'
+  category: string
+  category_es: string
+  explanation_es: string
+  explanation_en: string | null
+  structure: string | null
+  examples: LexGrammarExample[]
+  tips: string | null
+  common_mistakes: string | null
+  tags: string[] | null
+  sort_order: number
+  created_at: string
+}
+
+export interface LexVerb {
+  id: string
+  base_form: string
+  past_simple: string
+  past_participle: string
+  translation_es: string
+  type: 'regular' | 'irregular'
+  level: 'B1' | 'B2' | 'C1' | 'C2'
+  notes: string | null
+  example_past: string | null
+  example_participle: string | null
+  difficulty: number
+  frequency: number
+  tags: string[] | null
+  created_at: string
+  updated_at: string
+  progress?: LexVerbProgress
+}
+
+export interface LexVerbProgress {
+  id: string
+  user_id: string
+  verb_id: string
+  status: ProgressStatus
+  correct_answers: number
+  wrong_answers: number
+  attempts: number
+  correct_streak: number
+  last_reviewed_at: string | null
+  next_review_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LexVerbStats {
+  total: number
+  mastered: number
+  learning: number
+  difficult: number
+  pending: number
+  accuracy: number
+}
+
+export interface LexPhrasalVerb {
+  id: string
+  phrasal_verb: string
+  translation_es: string
+  definition_en: string
+  definition_es: string
+  example_en: string
+  example_es: string | null
+  category: string
+  category_es: string
+  level: 'B1' | 'B2' | 'C1'
+  is_separable: boolean
+  notes: string | null
+  sort_order: number
+  created_at: string
+  progress?: LexPhrasalVerbProgress
+}
+
+export interface LexPhrasalVerbProgress {
+  id: string
+  user_id: string
+  phrasal_verb_id: string
+  status: ProgressStatus
+  correct_answers: number
+  wrong_answers: number
+  attempts: number
+  correct_streak: number
+  last_reviewed_at: string | null
+  next_review_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LexPreposition {
+  id: string
+  preposition: string
+  use_case: string
+  use_case_es: string
+  example_en: string
+  example_es: string
+  category: string
+  category_es: string
+  level: 'B1' | 'B2' | 'C1' | 'C2'
+  notes: string | null
+  sort_order: number
+  created_at: string
+  progress?: LexPrepositionProgress
+}
+
+export interface LexPrepositionProgress {
+  id: string
+  user_id: string
+  preposition_id: string
+  status: ProgressStatus
+  correct_answers: number
+  wrong_answers: number
+  attempts: number
+  correct_streak: number
+  last_reviewed_at: string | null
+  next_review_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LexAdminUserStat {
+  user_id: string
+  display_name: string | null
+  last_login: string | null
+  last_seen: string | null
+  total_minutes: number
+  terms_mastered: number
+  terms_learning: number
+  terms_difficult: number
+  verbs_mastered: number
+  verbs_learning: number
+  phrasal_mastered: number
+  phrasal_learning: number
+}
+
 export type LexView =
   | 'home'
   | 'vocabulary'
@@ -129,7 +274,16 @@ export type LexView =
   | 'review'
   | 'progress'
   | 'favorites'
+  | 'verbs'
+  | 'grammar'
+  | 'phrasal-verbs'
+  | 'prepositions'
+  | 'listening'
+  | 'fill-blank'
+  | 'phrases'
+  | 'emails'
   | 'admin'
+  | 'registry'
 
 export interface LexUser {
   email: string
@@ -156,4 +310,27 @@ export interface QuizConfig {
 export interface FlashcardRating {
   termId: string
   rating: 'unknown' | 'hard' | 'learning' | 'mastered'
+}
+
+export type GrammarExerciseType = 'fill_blank' | 'multiple_choice' | 'error_correction' | 'transformation'
+
+export interface LexGrammarExercise {
+  id: string
+  topic_id: string
+  type: GrammarExerciseType
+  instruction: string
+  sentence: string
+  options: string[] | null
+  correct_answer: string
+  explanation: string | null
+  sort_order: number
+}
+
+export interface LexPhrasalVerbExercise {
+  id: string
+  phrasal_verb_id: string
+  sentence: string
+  correct_answer: string
+  hint_es: string
+  sort_order: number
 }

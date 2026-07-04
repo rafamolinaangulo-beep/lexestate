@@ -167,7 +167,7 @@ export default function VocabularySection({ terms, categories, dataLoaded, onSel
                            transition-all group flex items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-white font-semibold text-sm group-hover:text-emerald-300 transition-colors">
+                    <span className="text-white font-semibold text-sm group-hover:text-emerald-300 transition-colors capitalize">
                       {term.word_en}
                     </span>
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${LEVEL_COLORS[term.level] ?? ''}`}>

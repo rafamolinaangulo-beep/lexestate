@@ -71,6 +71,34 @@ function downloadTemplate() {
   a.click()
 }
 
+const GRAMMAR_TEMPLATE = [
+  {
+    title: 'Present Simple for Facts',
+    title_es: 'Presente simple para hechos',
+    level: 'B1',
+    category: 'Verb Tenses',
+    category_es: 'Tiempos verbales',
+    explanation_es: 'El presente simple se usa para expresar hechos permanentes, verdades generales y descripciones de propiedades.',
+    explanation_en: 'The present simple is used for permanent facts, general truths and property descriptions.',
+    structure: 'Subject + base verb (+ -s for he/she/it)',
+    examples: [
+      { en: 'The property benefits from a south-facing garden.', es: 'La propiedad se beneficia de un jardín orientado al sur.' },
+      { en: 'The apartment overlooks the marina.', es: 'El apartamento tiene vistas al puerto deportivo.' },
+    ],
+    tips: 'En descripciones de propiedades, el presente simple describe características permanentes.',
+    common_mistakes: '✗ "The property is benefitting..." ✓ "The property benefits..." — los verbos de estado no usan el continuo.',
+    sort_order: 10,
+  },
+]
+
+function downloadGrammarTemplate() {
+  const json = JSON.stringify(GRAMMAR_TEMPLATE, null, 2)
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+  a.download = 'lexestate_grammar_plantilla.json'
+  a.click()
+}
+
 const LEVEL_MAP: Record<string, string> = {
   basic: 'B1', beginner: 'A2', elementary: 'A2',
   intermediate: 'B2', 'upper-intermediate': 'C1',
@@ -367,11 +395,18 @@ export default function AdminSection({ user, terms, categories, dataLoaded, onRe
           <input type="file" accept=".csv,.json" onChange={handleFileImport} className="hidden" />
         </label>
         <button onClick={downloadTemplate}
-          title="Descargar plantilla CSV con el formato correcto"
+          title="Descargar plantilla CSV con el formato correcto para vocabulario"
           className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400
                      hover:text-emerald-300 text-sm font-medium px-3 py-2 rounded-xl transition-colors border border-emerald-500/20">
           <FileDown size={15} />
-          Plantilla
+          Plantilla vocab.
+        </button>
+        <button onClick={downloadGrammarTemplate}
+          title="Descargar plantilla JSON para añadir temas de gramática"
+          className="flex items-center gap-1.5 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400
+                     hover:text-violet-300 text-sm font-medium px-3 py-2 rounded-xl transition-colors border border-violet-500/20">
+          <FileDown size={15} />
+          Plantilla gram.
         </button>
         <button onClick={exportCSV}
           className="flex items-center gap-1.5 bg-slate-700/40 hover:bg-slate-700/60 text-slate-300

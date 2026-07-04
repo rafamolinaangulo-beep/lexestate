@@ -1,15 +1,21 @@
 import type {
   LexCategory, LexTerm, LexUserProgress, LexQuizResult,
   LexFavorite, LexStats, LexSettings, QuizConfig, GeneratedQuestion,
-  QuestionType, ProgressStatus,
+  QuestionType, ProgressStatus, LexGrammarTopic, LexGrammarExercise,
+  LexVerb, LexVerbProgress, LexVerbStats,
+  LexPhrasalVerb, LexPhrasalVerbProgress, LexPhrasalVerbExercise,
+  LexAdminUserStat,
 } from './types'
 
+const _appBase =
+  document.querySelector<HTMLMetaElement>('meta[name="app-base"]')?.content.replace(/\/+$/, '') ?? ''
+
 function apiPath(path: string): string {
-  return `/api.php?path=${encodeURIComponent('/api' + path)}`
+  return `${_appBase}/api.php?path=${encodeURIComponent('/api' + path)}`
 }
 
 export function authLoginPath(): string {
-  return `/api.php?path=${encodeURIComponent('/api/auth/login')}`
+  return `${_appBase}/api.php?path=${encodeURIComponent('/api/auth/login')}`
 }
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -140,6 +146,103 @@ export async function saveUserSettings(settings: Partial<LexSettings>): Promise<
   })
 }
 
+// ── Grammar ─────────────────────────────────────────────────────────────────────
+export async function fetchGrammarTopics(filter?: { level?: string; category?: string }): Promise<LexGrammarTopic[]> {
+  const params = new URLSearchParams()
+  if (filter?.level) params.set('level', filter.level)
+  if (filter?.category) params.set('category', filter.category)
+  const qs = params.toString()
+  return apiFetch<LexGrammarTopic[]>(`/lexestate/grammar${qs ? '?' + qs : ''}`)
+}
+
+export async function fetchGrammarExercises(topicId: string): Promise<LexGrammarExercise[]> {
+  return apiFetch<LexGrammarExercise[]>(`/lexestate/grammar/${topicId}/exercises`)
+}
+
+// ── Verbs ───────────────────────────────────────────────────────────────────────
+export async function fetchVerbs(): Promise<LexVerb[]> {
+  return apiFetch<LexVerb[]>('/lexestate/verbs')
+}
+
+export async function fetchVerbProgress(): Promise<LexVerbProgress[]> {
+  return apiFetch<LexVerbProgress[]>('/lexestate/verbs/progress')
+}
+
+export async function updateVerbProgress(
+  verbId: string,
+  isCorrect: boolean,
+  exerciseType: string
+): Promise<LexVerbProgress> {
+  return apiFetch<LexVerbProgress>(`/lexestate/verbs/progress/${verbId}`, {
+    method: 'POST',
+    body: JSON.stringify({ is_correct: isCorrect, exercise_type: exerciseType }),
+  })
+}
+
+export async function setVerbStatus(verbId: string, status: ProgressStatus): Promise<void> {
+  await apiFetch(`/lexestate/verbs/progress/${verbId}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status }),
+  })
+}
+
+export async function fetchVerbStats(): Promise<LexVerbStats> {
+  return apiFetch<LexVerbStats>('/lexestate/verbs/stats')
+}
+
+// ── Phrasal Verbs ───────────────────────────────────────────────────────────────
+export async function fetchPhrasalVerbs(filter?: { level?: string; category?: string }): Promise<LexPhrasalVerb[]> {
+  const params = new URLSearchParams()
+  if (filter?.level) params.set('level', filter.level)
+  if (filter?.category) params.set('category', filter.category)
+  const qs = params.toString()
+  return apiFetch<LexPhrasalVerb[]>(`/lexestate/phrasal-verbs${qs ? '?' + qs : ''}`)
+}
+
+export async function fetchPhrasalVerbProgress(): Promise<LexPhrasalVerbProgress[]> {
+  return apiFetch<LexPhrasalVerbProgress[]>('/lexestate/phrasal-verbs/progress')
+}
+
+export async function updatePhrasalVerbProgress(
+  verbId: string,
+  isCorrect: boolean
+): Promise<LexPhrasalVerbProgress> {
+  return apiFetch<LexPhrasalVerbProgress>(`/lexestate/phrasal-verbs/progress/${verbId}`, {
+    method: 'POST',
+    body: JSON.stringify({ is_correct: isCorrect }),
+  })
+}
+
+export async function setPhrasalVerbStatus(verbId: string, status: string): Promise<void> {
+  await apiFetch(`/lexestate/phrasal-verbs/progress/${verbId}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status }),
+  })
+}
+
+export async function fetchPhrasalVerbExercises(verbIds: string[]): Promise<LexPhrasalVerbExercise[]> {
+  if (!verbIds.length) return []
+  return apiFetch<LexPhrasalVerbExercise[]>(
+    `/lexestate/phrasal-verbs/exercises?ids=${verbIds.join(',')}`
+  )
+}
+
+// ── Prepositions ────────────────────────────────────────────────────────────────
+export async function fetchPrepositions(): Promise<import('./types').LexPreposition[]> {
+  return apiFetch('/lexestate/prepositions')
+}
+
+export async function fetchPrepositionProgress(): Promise<import('./types').LexPrepositionProgress[]> {
+  return apiFetch('/lexestate/prepositions/progress')
+}
+
+export async function updatePrepositionProgress(id: string, correct: boolean): Promise<void> {
+  await apiFetch(`/lexestate/prepositions/progress/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ correct }),
+  })
+}
+
 // ── Admin ───────────────────────────────────────────────────────────────────────
 export async function createTerm(data: Partial<LexTerm>): Promise<LexTerm> {
   return apiFetch<LexTerm>('/lexestate/admin/terms', {
@@ -230,6 +333,24 @@ export function generateLocalQuestions(
   })
 }
 
+// ── Usage session tracking ───────────────────────────────────────────────────────
+export async function startUsageSession(): Promise<{ id: string }> {
+  return apiFetch<{ id: string }>('/lexestate/usage/session', { method: 'POST', body: '{}' })
+}
+
+export async function pingUsageSession(sessionId: string): Promise<void> {
+  await apiFetch(`/lexestate/usage/session/${sessionId}/ping`, { method: 'POST', body: '{}' })
+}
+
+// ── Admin stats ─────────────────────────────────────────────────────────────────
+export async function fetchAdminUsersStats(): Promise<LexAdminUserStat[]> {
+  return apiFetch<LexAdminUserStat[]>('/lexestate/admin/users-stats')
+}
+
+export async function fetchMyStats(): Promise<LexAdminUserStat> {
+  return apiFetch<LexAdminUserStat>('/lexestate/usage/my-stats')
+}
+
 // ── Write practice answer check ──────────────────────────────────────────────────
 export function normalizeAnswer(s: string): string {
   return s
@@ -243,7 +364,9 @@ export function isAnswerCorrect(userAnswer: string, correctAnswer: string): bool
   const u = normalizeAnswer(userAnswer)
   const c = normalizeAnswer(correctAnswer)
   if (u === c) return true
+  // Accept singular/plural
   if (u + 's' === c || u === c + 's') return true
+  // Accept hyphen variations
   if (u.replace(/-/g, ' ') === c.replace(/-/g, ' ')) return true
   return false
 }

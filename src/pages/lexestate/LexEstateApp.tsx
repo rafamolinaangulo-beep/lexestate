@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Home, BookOpen, Layers, PenLine, GraduationCap, RotateCcw,
-  TrendingUp, Heart, Shield, LogOut, Menu, X, ChevronRight
+  TrendingUp, Heart, Shield, LogOut, Menu, X, ChevronRight, Globe, Target,
+  BookMarked, BookType, Zap, Headphones, FileText, MessageSquare, Mail, Link2, Users
 } from 'lucide-react'
 import lexEstateLogo from '@/assets/lexestate-icon.png'
-import type { LexUser, LexView, LexTerm, LexCategory } from './types'
-import { checkLexAuth } from './api'
-import { fetchCategories, fetchTerms } from './api'
+import type { LexUser, LexView, LexTerm, LexCategory, LexVerb } from './types'
+import { checkLexAuth, startUsageSession, pingUsageSession } from './api'
+import { fetchCategories, fetchTerms, fetchVerbs, fetchVerbProgress } from './api'
 import LexEstateHome from './components/LexEstateHome'
 import VocabularySection from './components/VocabularySection'
 import TermDetail from './components/TermDetail'
@@ -18,6 +19,15 @@ import ReviewMistakesSection from './components/ReviewMistakesSection'
 import ProgressSection from './components/ProgressSection'
 import FavoritesSection from './components/FavoritesSection'
 import AdminSection from './components/AdminSection'
+import GrammarSection from './components/GrammarSection'
+import VerbsSection from './components/VerbsSection'
+import PhrasalVerbsSection from './components/PhrasalVerbsSection'
+import PrepositionsSection from './components/PrepositionsSection'
+import ListeningSection from './components/ListeningSection'
+import FillBlankSection from './components/FillBlankSection'
+import PhrasesSection from './components/PhrasesSection'
+import EmailTemplatesSection from './components/EmailTemplatesSection'
+import UserRegistrySection from './components/UserRegistrySection'
 
 interface NavItem {
   id: LexView
@@ -28,12 +38,21 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: 'home',       label: 'Inicio',     icon: Home },
   { id: 'vocabulary', label: 'Vocabulario', icon: BookOpen },
+  { id: 'verbs',         label: 'Verbos',      icon: BookType },
+  { id: 'phrasal-verbs', label: 'Phrasal V.',  icon: Zap },
+  { id: 'prepositions',  label: 'Preposic.',   icon: Link2 },
+  { id: 'grammar',       label: 'Gramática',  icon: BookMarked },
   { id: 'flashcards', label: 'Flashcards', icon: Layers },
   { id: 'write',      label: 'Escribir',   icon: PenLine },
   { id: 'quiz',       label: 'Test',       icon: GraduationCap },
   { id: 'review',     label: 'Repaso',     icon: RotateCcw },
+  { id: 'listening',  label: 'Dictado',    icon: Headphones },
+  { id: 'fill-blank', label: 'Rellena',    icon: FileText },
+  { id: 'phrases',    label: 'Frases',     icon: MessageSquare },
+  { id: 'emails',     label: 'Emails',     icon: Mail },
   { id: 'progress',   label: 'Progreso',   icon: TrendingUp },
   { id: 'favorites',  label: 'Favoritos',  icon: Heart },
+  { id: 'registry',   label: 'Registro',   icon: Users },
 ]
 
 export default function LexEstateApp() {
@@ -47,12 +66,47 @@ export default function LexEstateApp() {
     return () => { document.body.style.background = prev }
   }, [])
 
+  useEffect(() => {
+    function applyIcon() {
+      document.querySelectorAll<HTMLLinkElement>('link[rel*="icon"]').forEach(l => { l.href = lexEstateLogo })
+    }
+    const prevTitle = document.title
+    applyIcon()
+    document.title = 'LexEstate'
+    const t = setTimeout(applyIcon, 0)
+
+    // PWA manifest swap
+    const manifestEl = document.querySelector<HTMLLinkElement>('link[rel="manifest"]')
+    const prevManifest = manifestEl?.href ?? ''
+    if (manifestEl) manifestEl.href = '/lexestate-manifest.json'
+    const themeEl = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    const prevTheme = themeEl?.content ?? ''
+    if (themeEl) themeEl.content = '#10b981'
+    const appTitleEl = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]')
+    const prevAppTitle = appTitleEl?.content ?? ''
+    if (appTitleEl) appTitleEl.content = 'LexEstate'
+    const touchIconEl = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]')
+    const prevTouchIcon = touchIconEl?.href ?? ''
+    if (touchIconEl) touchIconEl.href = '/icons/lexestate-192.png'
+
+    return () => {
+      clearTimeout(t)
+      document.querySelectorAll<HTMLLinkElement>('link[rel*="icon"]').forEach(l => { l.href = '/favicon.png' })
+      document.title = prevTitle
+      if (manifestEl) manifestEl.href = prevManifest
+      if (themeEl) themeEl.content = prevTheme
+      if (appTitleEl) appTitleEl.content = prevAppTitle
+      if (touchIconEl) touchIconEl.href = prevTouchIcon
+    }
+  }, [])
   const [view, setView] = useState<LexView>('home')
   const [selectedTermId, setSelectedTermId] = useState<string | null>(null)
   const [reviewTermIds, setReviewTermIds] = useState<string[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [categories, setCategories] = useState<LexCategory[]>([])
   const [terms, setTerms] = useState<LexTerm[]>([])
+  const [verbs, setVerbs] = useState<LexVerb[]>([])
+  const [verbsLoaded, setVerbsLoaded] = useState(false)
   const [dataLoaded, setDataLoaded] = useState(false)
 
   useEffect(() => {
@@ -74,10 +128,63 @@ export default function LexEstateApp() {
     }
   }, [])
 
-  useEffect(() => { loadData() }, [loadData])
+  const loadVerbs = useCallback(async () => {
+    try {
+      const [vbs, prog] = await Promise.all([fetchVerbs(), fetchVerbProgress().catch(() => [])])
+      const progMap = Object.fromEntries(prog.map(p => [p.verb_id, p]))
+      setVerbs(vbs.map(v => ({ ...v, progress: progMap[v.id] })))
+    } catch {
+      try { setVerbs(await fetchVerbs()) } catch {}
+    } finally {
+      setVerbsLoaded(true)
+    }
+  }, [])
+
+  const lastDataLoadAt = useRef(0)
+  useEffect(() => {
+    loadData()
+    lastDataLoadAt.current = Date.now()
+  }, [loadData])
+  useEffect(() => { loadVerbs() }, [loadVerbs])
+
+  // Refresh terms+categories when navigating away from admin,
+  // or when entering a data-dependent view after >2 min without refresh.
+  const prevViewRef = useRef<LexView | null>(null)
+  const TERMS_VIEWS: LexView[] = [
+    'vocabulary', 'term-detail', 'flashcards', 'quiz', 'write',
+    'fill-blank', 'favorites', 'progress', 'review', 'listening', 'emails',
+  ]
+  useEffect(() => {
+    const prev = prevViewRef.current
+    prevViewRef.current = view
+    if (prev === null) return
+    const fromAdmin = prev === 'admin'
+    const stale = Date.now() - lastDataLoadAt.current > 120_000
+    if (fromAdmin || (TERMS_VIEWS.includes(view) && stale)) {
+      loadData()
+      lastDataLoadAt.current = Date.now()
+    }
+  }, [view, loadData])
+
+  const sessionIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>
+    startUsageSession()
+      .then(({ id }) => {
+        sessionIdRef.current = id
+        interval = setInterval(() => {
+          if (sessionIdRef.current) pingUsageSession(sessionIdRef.current).catch(() => {})
+        }, 60_000)
+      })
+      .catch(() => {})
+    return () => {
+      clearInterval(interval)
+      if (sessionIdRef.current) pingUsageSession(sessionIdRef.current).catch(() => {})
+    }
+  }, [])
 
   async function handleLogout() {
-    await fetch('/api.php?path=%2Fapi%2Fauth%2Flogout', { method: 'POST', credentials: 'include' }).catch(() => {})
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
     navigate('/lexestate/login', { replace: true })
   }
 
@@ -101,8 +208,10 @@ export default function LexEstateApp() {
     )
   }
 
-  const isAdmin = user?.role === 'admin'
-  const navItems = isAdmin ? [...NAV_ITEMS, { id: 'admin' as LexView, label: 'Admin', icon: Shield }] : NAV_ITEMS
+  const isSuperAdmin = user?.email === 'rafamolina@rafamolina.es'
+  const navItems = isSuperAdmin
+    ? [...NAV_ITEMS, { id: 'admin' as LexView, label: 'Admin', icon: Shield }]
+    : NAV_ITEMS
 
   const Sidebar = ({ mobile = false }) => (
     <div className={`flex flex-col h-full ${mobile ? '' : 'w-56'}`}>
@@ -145,6 +254,22 @@ export default function LexEstateApp() {
           <div className="text-white text-xs font-medium truncate">{user?.display_name ?? user?.email ?? 'Invitado'}</div>
           <div className="text-slate-500 text-[11px]">{user ? 'Conectado' : 'Sin sesión'}</div>
         </div>
+        <div className="flex gap-1.5 px-1">
+          <a href="/"
+            title="Ir a la web"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px]
+                       text-slate-500 hover:text-white bg-white/[0.03] border border-emerald-500/10
+                       hover:border-emerald-500/30 transition-all no-underline">
+            <Globe size={12} /> Web
+          </a>
+          <a href="/rema/app"
+            title="Ir a REMA"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px]
+                       text-slate-500 hover:text-white bg-white/[0.03] border border-emerald-500/10
+                       hover:border-emerald-500/30 transition-all no-underline">
+            <Target size={12} /> REMA
+          </a>
+        </div>
         {user && (
           <button onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm
@@ -160,20 +285,29 @@ export default function LexEstateApp() {
   const currentSection = () => {
     const shared = { user, categories, terms, dataLoaded, onRefreshData: loadData }
     switch (view) {
-      case 'home':       return <LexEstateHome {...shared} onNavigate={navigate2} onReview={startReview} />
+      case 'home':      return <LexEstateHome {...shared} onNavigate={navigate2} onReview={startReview} />
       case 'vocabulary': return <VocabularySection {...shared} onSelectTerm={id => navigate2('term-detail', id)} />
       case 'term-detail': return selectedTermId
         ? <TermDetail termId={selectedTermId} user={user} terms={terms} categories={categories}
                       onBack={() => setView('vocabulary')} onNavigate={navigate2} />
         : <VocabularySection {...shared} onSelectTerm={id => navigate2('term-detail', id)} />
       case 'flashcards': return <FlashcardsSection {...shared} />
-      case 'write':      return <WritePracticeSection {...shared} />
-      case 'quiz':       return <QuizSection {...shared} onReview={startReview} />
-      case 'review':     return <ReviewMistakesSection {...shared} termIds={reviewTermIds} />
-      case 'progress':   return <ProgressSection {...shared} onNavigate={navigate2} />
-      case 'favorites':  return <FavoritesSection {...shared} onSelectTerm={id => navigate2('term-detail', id)} />
-      case 'admin':      return isAdmin ? <AdminSection {...shared} /> : null
-      default:           return null
+      case 'write':     return <WritePracticeSection {...shared} />
+      case 'quiz':      return <QuizSection {...shared} verbs={verbs} onReview={startReview} />
+      case 'review':    return <ReviewMistakesSection {...shared} verbs={verbs} termIds={reviewTermIds} onFinish={() => { setReviewTermIds([]); setView('quiz') }} />
+      case 'progress':  return <ProgressSection {...shared} onNavigate={navigate2} />
+      case 'favorites': return <FavoritesSection {...shared} onSelectTerm={id => navigate2('term-detail', id)} />
+      case 'verbs':         return <VerbsSection user={user} verbs={verbs} verbsLoaded={verbsLoaded} />
+      case 'phrasal-verbs':  return <PhrasalVerbsSection user={user} />
+      case 'prepositions':   return <PrepositionsSection user={user} />
+      case 'grammar':        return <GrammarSection user={user} />
+      case 'listening':  return <ListeningSection {...shared} />
+      case 'fill-blank': return <FillBlankSection {...shared} />
+      case 'phrases':    return <PhrasesSection />
+      case 'emails':     return <EmailTemplatesSection user={user} terms={terms} dataLoaded={dataLoaded} onSelectTerm={id => navigate2('term-detail', id)} />
+      case 'admin':     return isSuperAdmin ? <AdminSection {...shared} /> : null
+      case 'registry':  return <UserRegistrySection user={user} isSuperAdmin={isSuperAdmin} />
+      default:          return null
     }
   }
 
@@ -207,9 +341,6 @@ export default function LexEstateApp() {
                  className="w-7 h-7 rounded-lg object-cover shadow-sm" />
             <span className="text-white font-semibold text-sm">LexEstate</span>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="ml-auto text-slate-400 hover:text-white p-1">
-            {sidebarOpen ? <X size={20} /> : null}
-          </button>
         </header>
 
         {/* Content */}
